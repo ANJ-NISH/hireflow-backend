@@ -6,6 +6,9 @@ const ALLOWED_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ] as const;
 
+export const isAllowedMimeType = (value: string): boolean =>
+  (ALLOWED_MIME_TYPES as readonly string[]).includes(value);
+
 export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; 
 export const MAX_RESUMES_PER_CANDIDATE = 5;
 

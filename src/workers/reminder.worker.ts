@@ -27,6 +27,7 @@ export function startReminderWorker() {
       if (interview.scheduledAt.toISOString() !== scheduledAt) return;
 
       const { application } = interview;
+      if (application.status === "WITHDRAWN" || application.status === "REJECTED") return;
       const jobTitle = application.job.title;
       const when = `When: ${formatUtc(interview.scheduledAt)}`;
       const data = { interviewId, scheduledAt };

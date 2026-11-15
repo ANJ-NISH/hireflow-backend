@@ -76,7 +76,11 @@ export async function listMyApplications(req: Request, res:Response, next: NextF
                     status: true,
                     company: {select: {name: true, logoUrl: true}}
                 }
-            }
+            },
+            interviews: {
+              select: { id: true, scheduledAt: true, mode: true, locationOrUrl: true, status: true },
+              orderBy: { scheduledAt: "asc" },
+            },
         },
         orderBy: {createdAt: "desc"}
       });

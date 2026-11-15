@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 import { prisma } from "../lib/prisma.js";
 import { getUploadUrl, getDownloadUrl, headObject, deleteObject } from "../lib/s3.js";
-import { requestUploadUrlSchema, confirmUploadSchema, MAX_RESUMES_PER_CANDIDATE, MAX_FILE_SIZE_BYTES } from "../schemas/resume.schema.js";
+import { requestUploadUrlSchema, confirmUploadSchema, MAX_RESUMES_PER_CANDIDATE, MAX_FILE_SIZE_BYTES, isAllowedMimeType} from "../schemas/resume.schema.js";
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100);
@@ -56,36 +56,45 @@ export async function confirmUpload(req: Request, res: Response, next: NextFunct
       return res.status(403).json({ success: false, message: "This file doesn't belong to you" });
       }
 
-      let head;
-      try{
-        head=await headObject(storageKey);
-        if ((head.ContentLength ?? 0) > MAX_FILE_SIZE_BYTES) {
-          await deleteObject(storageKey); // don't leave the oversized file sitting in the bucket
-          return res.status(400).json({ success: false, message: "File must be 5MB or smaller" });
-        }
-      }
-      catch{
-        return res.status(400).json({ success: false, message: "Upload not found — the file may not have uploaded successfully" });
-      }
+    const already = await prisma.resume.findUnique({ where: { storageKey } });
+    if (already) {
+      return res.status(200).json({ success: true, data: { resume: already } });
+    }
 
-      const resume = await prisma.resume.create({
-      data: {
-        candidateId,
-        originalFilename,
-        storageKey,
-        mimeType: head.ContentType || "application/octet-stream",
-        sizeBytes: head.ContentLength || 0,
-      },
-      });
+    let head;
+    try {
+      head = await headObject(storageKey);
+    } catch {
+      return res.status(400).json({ success: false, message: "Upload not found — the file may not have uploaded successfully" });
+    }
 
-       const resumeCount = await prisma.resume.count({ where: { candidateId } });
+    const sizeBytes = head.ContentLength ?? 0;
+    const mimeType= head.ContentType ?? "";
+
+    let rejection: string | null = null;
+    if (sizeBytes === 0) rejection = "The uploaded file is empty";
+    else if (sizeBytes > MAX_FILE_SIZE_BYTES) rejection = "File must be 5MB or smaller";
+    else if (!isAllowedMimeType(mimeType)) rejection = "Only PDF and Word documents are allowed";
+
+    if (rejection) {
+      await deleteObject(storageKey).catch((err) =>
+        console.error("[resume] could not delete rejected upload:", err)
+      );
+      return res.status(400).json({ success: false, message: rejection });
+    }
+
+    const resume = await prisma.resume.create({
+      data: { candidateId, originalFilename, storageKey, mimeType, sizeBytes },
+    });
+
+    const resumeCount = await prisma.resume.count({ where: { candidateId } });
         if (resumeCount === 1) {
         await prisma.resume.update({ where: { id: resume.id }, data: { isPrimary: true } });
         resume.isPrimary = true;
-        }
+    }
 
-        return res.status(201).json({ success: true, data: { resume } });
-        }
+    return res.status(201).json({ success: true, data: { resume } });
+    }
     catch(err)
     {
         next(err);

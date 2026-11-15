@@ -8,7 +8,8 @@ export const updateProfileSchema = z.object({
   skills: z.array(z.string().trim().min(1)).max(50).optional(),
   languages: z.array(z.string().trim().min(1)).max(20).optional(),
   resumeUrl: z.string().trim().url("Enter a valid URL").optional().or(z.literal("")),
-  totalExperienceYears: z.coerce.number().int().min(0).max(60).optional()
+  totalExperienceYears: z.coerce.number().int().min(0).max(60).optional(),
+  isSearchable: z.boolean().optional(),
 });
 
 export const experienceSchema = z.object({

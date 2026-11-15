@@ -293,29 +293,41 @@ export async function deleteProject(req: Request, res: Response, next: NextFunct
 }
 
 
-export async function getProfileByUserId(req: Request, res: Response, next: NextFunction)
-{
-    try{
-      const userId= req.params.userId as string;
+export async function getProfileByUserId(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.params.userId as string;
+    const recruiterId = req.user!.userId;
 
-      const profile= await prisma.candidateProfile.findUnique({where: {userId},
-      include:{
-        experiences: {orderBy: {startDate: "desc"}},
-        educations: {orderBy: {startDate: "desc"}},
-        certifications: {orderBy: {issueDate: "desc"}},
-        projects: true
-      }
+    const [profile, hasApplied] = await Promise.all([
+      prisma.candidateProfile.findUnique({
+        where: { userId },
+        include: {
+          experiences: { orderBy: { startDate: "desc" } },
+          educations: { orderBy: { startDate: "desc" } },
+          certifications: { orderBy: { issueDate: "desc" } },
+          projects: true,
+        },
+      }),
+      prisma.application.findFirst({
+        where: { candidateId: userId, status: { not: "WITHDRAWN" }, job: { company: { recruiterId } } },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!profile || (!hasApplied && !profile.isSearchable)) {
+      return res.status(404).json({ success: false, message: "Profile not available" });
+    }
+
+    const { phone, resumeUrl, ...visible } = profile;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        profile: hasApplied ? { ...visible, phone } : visible,
+        contactVisible: !!hasApplied,
+      },
     });
-
-    if(!profile)
-    {
-        return res.status(404).json({success: false, message: "Profile not found"})
-    }
-
-    return res.status(200).json({success: true, data: {profile}})
-    }
-    catch(err)
-    {
-        next(err);
-    }
+  } catch (err) {
+    next(err);
+  }
 }

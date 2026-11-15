@@ -35,7 +35,7 @@ export async function searchCandidates(req: Request, res: Response, next: NextFu
 
       const {skill, location, experienceMin, experienceMax, page, limit}=parsed.data;
 
-      const where: any={};
+      const where: any = { isSearchable: true, user: { isSuspended: false } };
       if(skill){
         where.skills= {has: skill}
       };
@@ -55,16 +55,25 @@ export async function searchCandidates(req: Request, res: Response, next: NextFu
 
       const skip=(page-1)*limit;
 
-      const [profiles, total]= await Promise.all([
-        prisma.candidateProfile.findMany({
-            where,
-            include: {user: {select: {id: true, name: true, email: true}}},
-            orderBy: {updatedAt: "desc"},
-            skip,
-            take: limit
-        }),
-        prisma.candidateProfile.count({where})
-      ]);
+      const [profiles, total] = await Promise.all([
+      prisma.candidateProfile.findMany({
+        where,
+        select: {
+          id: true,
+          userId: true,
+          headline: true,
+          location: true,
+          skills: true,
+          languages: true,
+          totalExperienceYears: true,
+          user: { select: { id: true, name: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.candidateProfile.count({ where }),
+    ]);
 
       return res.status(200).json({success: true, data: {profiles, pagination:{page, limit,total, totalPages: Math.ceil(total/ limit)}}})
     }
