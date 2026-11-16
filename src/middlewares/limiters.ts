@@ -119,3 +119,11 @@ export const complaintLimiter = rateLimit({
   key: byUser,
   message: "Too many complaints submitted.",
 });
+
+export const recentlyViewedLimiter = rateLimit({
+  name: "recently-viewed",
+  limit: 200,
+  windowSeconds: HOUR,
+  key: byUser,
+  message: "Too many requests.",
+});

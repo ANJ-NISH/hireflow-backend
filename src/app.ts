@@ -13,6 +13,7 @@ import complaintRoutes from "./routes/complaint.routes.js";
 import recruiterToolsRoutes from "./routes/recruiterTools.routes.js";
 import resumeRoutes from "./routes/resume.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
+import recentlyViewedRoutes from "./routes/recentlyViewed.routes.js";
 import { globalLimiter } from "./middlewares/limiters.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
@@ -48,6 +49,7 @@ app.use("/api/complaints", complaintRoutes);
 app.use("/api/recruiter-tools", recruiterToolsRoutes);
 app.use("/api/resumes", resumeRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/recently-viewed", recentlyViewedRoutes);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
