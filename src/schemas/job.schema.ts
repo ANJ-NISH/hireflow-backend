@@ -24,6 +24,7 @@ export const jobSearchSchema= z.object({
     experienceMin: z.coerce.number().int().min(0).optional(),
     experienceMax: z.coerce.number().int().min(0).optional(),
     salaryMin: z.coerce.number().int().positive().optional(),
+    sort: z.enum(["relevance", "newest"]).optional(),
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().positive().max(50).default(20),
 })

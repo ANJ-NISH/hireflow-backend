@@ -1,6 +1,6 @@
 import type {Request, Response, NextFunction} from "express";
 import {prisma} from "../lib/prisma.js";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import {createJobSchema, updateJobSchema, jobSearchSchema} from "../schemas/job.schema.js";
 import { stableKey } from "../lib/cache.js";
 import {
@@ -13,7 +13,7 @@ import type { JobSearchInput } from "../schemas/job.schema.js";
 
 const MAX_CACHED_PAGE = 5;
 
-async function runJobSearch(input: JobSearchInput) {
+async function runFilterSearch(input: JobSearchInput) {
   const { search, location, workMode, employmentType, skill, experienceMin, experienceMax, salaryMin, page, limit } = input;
 
   const where: Prisma.JobWhereInput = { status: "PUBLISHED" };
@@ -46,6 +46,70 @@ async function runJobSearch(input: JobSearchInput) {
   ]);
 
   return { jobs, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+}
+
+const likePattern = (value: string) => `%${value.replace(/[\\%_]/g, "\\$&")}%`;
+
+async function runFullTextSearch(input: JobSearchInput, search: string) {
+  const { location, workMode, employmentType, skill, experienceMin, experienceMax, salaryMin, sort, page, limit } = input;
+
+  const tsq = Prisma.sql`websearch_to_tsquery('english', search_normalize(${search}))`;
+
+  const conditions: Prisma.Sql[] = [
+    Prisma.sql`j.status = 'PUBLISHED'`,
+    Prisma.sql`j.search_vector @@ ${tsq}`,
+  ];
+  if (location) conditions.push(Prisma.sql`j.location ILIKE ${likePattern(location)}`);
+  if (workMode) conditions.push(Prisma.sql`j."workMode" = ${workMode}::"WorkMode"`);
+  if (employmentType) conditions.push(Prisma.sql`j."employmentType" ILIKE ${likePattern(employmentType)}`);
+  if (skill) conditions.push(Prisma.sql`${skill} = ANY(j.skills)`); 
+  if (salaryMin) conditions.push(Prisma.sql`j."salaryMax" >= ${salaryMin}::int`);
+  if (experienceMin !== undefined) conditions.push(Prisma.sql`j."experienceMax" >= ${experienceMin}::int`);
+  if (experienceMax !== undefined) conditions.push(Prisma.sql`j."experienceMin" <= ${experienceMax}::int`);
+
+  const where = Prisma.join(conditions, " AND ");
+
+  const orderBy =
+    sort === "newest"
+      ? Prisma.sql`j."createdAt" DESC, j.id DESC`
+      : Prisma.sql`ts_rank(j.search_vector, ${tsq}) DESC, j."createdAt" DESC, j.id DESC`;
+
+  const skip = (page - 1) * limit;
+
+  const [rows, counts] = await Promise.all([
+    prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT j.id FROM jobs j
+      WHERE ${where}
+      ORDER BY ${orderBy}
+      LIMIT ${limit}::int OFFSET ${skip}::int
+    `),
+    prisma.$queryRaw<{ count: number }[]>(Prisma.sql`
+      SELECT count(*)::int AS count FROM jobs j WHERE ${where}
+    `),
+  ]);
+
+  const total = counts[0]?.count ?? 0;
+  const ids = rows.map((r) => r.id);
+
+  const jobs = ids.length
+    ? await prisma.job.findMany({
+        where: { id: { in: ids } },
+        include: { company: { select: { name: true, logoUrl: true } } },
+      })
+    : [];
+
+  const position = new Map(ids.map((id, i) => [id, i]));
+  jobs.sort((a, b) => position.get(a.id)! - position.get(b.id)!);
+
+  return { jobs, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+}
+
+async function runJobSearch(input: JobSearchInput) {
+  if (input.search) {
+    const ranked = await runFullTextSearch(input, input.search);
+    if (ranked.pagination.total > 0) return ranked;
+  }
+  return runFilterSearch(input);
 }
 
 async function getOwnedCompanyOrFail(userId: string, res: Response) {
@@ -220,8 +284,11 @@ export async function searchJobs(req: Request, res: Response, next: NextFunction
     if (!parsed.success) {
       return res.status(400).json({ success: false, message: "Invalid search parameters", errors: parsed.error.flatten().fieldErrors });
     }
-
-    const input = parsed.data;
+    
+    const input: JobSearchInput = {
+      ...parsed.data,
+      sort: parsed.data.search && parsed.data.sort === "newest" ? "newest" : undefined,
+    };
     const run = () => runJobSearch(input);
 
     const { data, status } =

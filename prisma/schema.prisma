@@ -153,6 +153,7 @@ model Job{
     experienceMin Int?
     experienceMax Int?
     status JobStatus @default(DRAFT)
+    searchVector Unsupported("tsvector")? @map("search_vector")
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 
@@ -161,6 +162,8 @@ model Job{
     recentlyViewedBy RecentlyViewedJob[]
 
     company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+    
+    @@index([searchVector], type: Gin)
 
     @@map("jobs")
 }
